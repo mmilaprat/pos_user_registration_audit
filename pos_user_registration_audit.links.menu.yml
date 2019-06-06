@@ -1,0 +1,14 @@
+pos_user_registration_audit.admin_settings:  
+  title: 'PoS admin audit user'
+  description: 'PoS admin audit user'
+  parent: system.admin_config
+  route_name: pos_user_registration_audit.admin_settings
+  weight: 101
+
+pos_user_registration_audit.login_linkedin_settings:  
+  title: 'PoS LinkedIn validation LinkedIn new accounts'
+  description: 'PoS LinkedIn validation new accounts'
+  parent: pos_user_registration_audit.admin_settings
+  route_name: pos_user_registration_audit.login_linkedin_settings
+  weight: 102
+  

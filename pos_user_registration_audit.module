@@ -1,0 +1,276 @@
+<?php
+ 
+ /**
+ * pos_user_registration_audit module
+ *
+ */
+ 
+use Drupal\user\Entity\User;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Routing\RouteMatchInterface;
+
+function pos_user_registration_audit_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.pos_user_registration_audit':
+      return t("
+        <h2>PoS user registration module</h2>
+        <p>This module has been created to store the Uid of the user that enable an user account in the PoS site.</p>
+    ");
+    break;
+  }
+}
+
+function pos_user_registration_audit_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
+	
+	//drupal_set_message("form_id =".$form_id."<----", 'error');
+	
+	if (('user_form' == $form_id) || ('user_register_form' == $form_id)) {
+		//drupal_set_message("Dins<----", 'error');
+		
+		//add a hidden field to be able to check if user has been active
+
+			$entity = $form_state->getFormObject()->getEntity();	
+			
+			$field_status_previous_value = 0;
+			
+			if (('user_register_form' == $form_id)) {
+				$field_status_previous_value = 0;
+			}
+			else {
+				$field_status_previous_value = $entity->status[0]->value;
+			}
+			
+			
+			//drupal_set_message("field_publish_previous_value=".$field_publish_previous_value, 'error');
+			
+			//field used to know if the field field_publish change from 0 to 1
+	 		$form['pos_field_status_previous_value'] = [
+				'#type'          => 'hidden',
+				//'#type'          => 'textfield',
+				'#title'         => 'pos_field_status_previous_value',
+				'#default_value' =>  $field_status_previous_value,
+			];
+			
+
+								
+			// Add a custom submit handler .
+			$form['actions']['submit']['#submit'][] = 'pos_user_registration_audit_registration_form_submit';
+			
+		}
+
+
+}
+
+
+function pos_user_registration_audit_registration_form_submit(array $form, FormStateInterface $form_state) {
+
+	//drupal_set_message("IN pos_user_registration_audit_registration_form_submit!!!", 'error');
+	
+	//we must check if we need to store the uid that validate the user account.
+	// if status has been updated from 0 to 1 we must set the uid in the field field_account_enabled_by
+
+	//recover data field status
+	$field_status = "";	
+	$field_status = $form_state->getValue('status');
+	$field_status = $field_status[0]['value'];
+	//drupal_set_message("field_status->".$field_status."<---", 'error');
+	
+	//recover data field id
+	$field_uid = "";	
+	$field_uid = $form_state->getValue('uid');
+	//$field_uid = $field_uid[0]['value'];
+	//drupal_set_message("field_uid->".$field_uid."<---", 'error');
+
+	
+	//recover preivious status
+    $pos_field_publish_previous_status = $form_state->getValue('pos_field_status_previous_value');
+	
+	//drupal_set_message("pos_field_publish_previous_status->".$pos_field_publish_previous_status."<---", 'error');
+
+	$currentUserId = \Drupal::currentUser()->id();
+	//drupal_set_message("currentUserId->".$currentUserId."<---", 'error');
+	
+	if ($pos_field_publish_previous_status==0) {
+		//previous status was blocked
+		if ($field_status==1) {
+			//new status is active
+			//we need to publish the user id of current user in the field field_account_enabled_by
+			
+			//recover user data by id
+
+			$user = \Drupal\user\Entity\User::load($field_uid);		
+			// Set the field value new value.
+			$user->set('field_account_enabled_by', $currentUserId);
+			// Save the $user object, else changes won't persist.
+			$user->save();
+
+		}	
+	}
+	
+	
+	//drupal_set_message("OUT pos_user_registration_audit_registration_form_submit!!!", 'error');
+	
+}
+
+//hook _entit_insert, used to check if the user has been created by the linked in account.
+//we do this hook to se the status of the user to blocked
+use Symfony\Component\HttpFoundation\RedirectResponse;
+use Drupal\Core\Link;
+use Drupal\Core\Url;
+
+
+//hook user_presave, used to set the correct status in case the site is configured al users needs approval
+//this hook is here to try to solve this bug https://www.drupal.org/project/social_auth/issues/3056889
+//also we add the control for the configuration in driver with LinkedIn 
+function pos_user_registration_audit_user_presave($account) {
+		
+	//only for new accounts		
+	if ($account->isNew()) {
+		
+		//we check if the account is created by an anonymous user
+		
+		if (\Drupal::currentUser()->isAuthenticated()) {
+			drupal_set_message("---account created by a logged user, we don't need to cheek more things---");
+		}
+		else {
+			drupal_set_message("---account created by an anonymous user, we must check how we must create the new account---");
+		
+			$config = \Drupal::config('user.settings');	
+			$typeOfRegistration = $config->get('register');
+			if ($typeOfRegistration=='visitors_admin_approval') {
+				$account->status = 0;	
+			} 
+				
+			//driver control user status
+			$autoApproveLinkedInUsers = False;
+			
+			$configLinkedIn = \Drupal::config('pos_user_registration_audit.settings');
+			$pos_linkedin_new_user_enabled = $configLinkedIn->get('pos_linkedin_new_user_enabled');
+			$pos_linkedin_new_user_behavior_config = $configLinkedIn->get('pos_linkedin_new_user_behavior_config');
+			
+			if ($pos_linkedin_new_user_enabled==1) {
+				
+				if ($pos_linkedin_new_user_behavior_config==2) {
+					//drupal_set_message("---user must be approved and logged---");
+					$autoApproveLinkedInUsers = True;
+					//$account->status = 1;
+				}
+				else {
+					//drupal_set_message("---user must be blocked---");
+					$autoApproveLinkedInUsers = False;
+				}
+			}
+			
+			if ($autoApproveLinkedInUsers) {
+				$account->status = 1;	
+			}
+		}
+	}
+	
+}
+
+
+function pos_user_registration_audit_user_insert(Drupal\Core\Entity\EntityInterface $entity) {
+	//drupal_set_message("*******---pos_user_registration_audit_user_insert---");
+	//foreach ($entity as $k=>$v) {
+	//	drupal_set_message("---k---".$k);
+	//}
+
+	$configLinkedIn = \Drupal::config('pos_user_registration_audit.settings');
+	$pos_linkedin_new_user_enabled = $configLinkedIn->get('pos_linkedin_new_user_enabled');
+	$pos_linkedin_new_user_behavior_config = $configLinkedIn->get('pos_linkedin_new_user_behavior_config');
+	
+	if ($pos_linkedin_new_user_enabled==1) {
+		
+		//drupal_set_message("---pos_linkedin_new_user_enabled enabled---");
+		//Recover how is configured the user registration in the site
+		$config = \Drupal::config('user.settings');
+		$typeOfRegistration = $config->get('register');
+		$autoApproveLinkedInUsers = False;
+		if (($typeOfRegistration=='visitors_admin_approval') && ($pos_linkedin_new_user_behavior_config==2)) {
+			//drupal_set_message("---user must be approved and logged---");
+			$autoApproveLinkedInUsers = True;
+		}
+		else {
+			//drupal_set_message("---user must be blocked---");
+			$autoApproveLinkedInUsers = False;
+		}
+		
+		//we recover entity id from the entity created	
+		$entityUid = $entity->get('uid')->getValue();
+		$entityUid = $entityUid[0]['value'];	
+		//drupal_set_message("------entityUid:".$entityUid."<-----");
+		
+		//recover the entitity status, for users status = 0 -> Bloqued, status = 1 -> Active
+		$entityStatus = $entity->get('status')->getValue();
+		$entityStatus = $entityStatus[0]['value'];	
+		//drupal_set_message("------entityStatus:".$entityStatus."<-----");
+		
+		//recover content of the field real name. this field is mandatory into the create user form, it can only be null if the user is created by the linkedin login
+		$field_real_name = $entity->get('field_real_name')->getValue();
+		$field_real_name = $field_real_name[0]['value'];
+		//drupal_set_message("------field_real_name:".$field_real_name."<-----");
+		
+		//ig realname is null and the status is active this means that the user has been cerated using linkedin and their status must be Blocked
+		//if (($field_real_name=="") && ($entityStatus==1)) {
+		if ($field_real_name=="") {
+			$user = User::load($entityUid);
+			$usernameValue = $entity->get('name')->getValue();
+			$usernameValue = $usernameValue[0]['value'];			
+			$user->set('field_real_name', $usernameValue);
+			
+			if ($autoApproveLinkedInUsers == True) {
+				//as the users has not been autologged by the social_auth_linkedin we do it here
+				
+				
+				//we autoaccept terms and conditions				
+				$user->set('field_terms_and_conditions', True);
+				
+				//we set user 1 as user id that enable/validate the accout
+				
+				$user->set('field_account_enabled_by', 1);
+				$user->save();
+				
+				//we add a new message to inform users that the account has been automatically approved by the system
+				
+				//$pass_link = \Drupal\Core\Link::fromTextAndUrl('here', base_path()."about/terms-conditions")->toString();
+				
+				//$pass_link = Link::fromTextAndUrl(t('here'), Url::fromUri(base_path()."about/terms-conditions",array('attributes' => array('target' => '_blank'))))->toString();
+				
+				//$pass_link = \Drupal::l(t('here'), base_path()."about/terms-conditions");
+				$link = \Drupal\Core\Url::fromRoute('entity.node.canonical', ['node' => 59])->toString();
+				//global $base_url;
+				//$link = Link::fromTextAndUrl('here', Url::fromUri($base_url.'about/terms-conditions'));
+				//about/terms-conditions
+				
+				//drupal_set_message("warning 1", "warning");
+				//$errors = drupal_get_messages('warning');
+				drupal_set_message(t("Your account has been automatically approved by the system. Terms and conditions has been accepted by default. Click <a href='@link'>here</a> to read it.", array('@link' => $link)), "warning");
+				//drupal_set_message("warning 2", "warning");
+				
+//				drupal_set_message(t('The e-mail has been published <a href="@link">here</a>.', array('@link' => $link)));
+				
+				user_login_finalize($user);	
+				
+				$response = new RedirectResponse(base_path()."user/".$entityUid."/edit");
+  				$response->send();
+				
+			}
+			else {
+				//as the social_auth_linkedin sets the status of user to 1, but the message "Your account was created, but it needs administrator's approval." appears n the screen
+				//we set the user status to 0 (Bloqued)		
+				//update user data to set it as blocked					
+				//$user = \Drupal\user\Entity\User::load($entityUid);		
+				
+				//we autoaccept terms and conditions				
+				$user->set('field_terms_and_conditions', True);
+				
+				// Set the field value new value.
+				//we did this into the presave
+				//$user->set('status', 0);
+				// Save the $user object, else changes won't persist.
+				$user->save();
+			}
+		}
+	}
+}
