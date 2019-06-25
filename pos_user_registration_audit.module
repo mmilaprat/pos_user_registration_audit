@@ -133,7 +133,7 @@ function pos_user_registration_audit_user_presave($account) {
 			drupal_set_message("---account created by a logged user, we don't need to cheek more things---");
 		}
 		else {
-			drupal_set_message("---account created by an anonymous user, we must check how we must create the new account---");
+			//drupal_set_message("---account created by an anonymous user, we must check how we must create the new account---");
 		
 			$config = \Drupal::config('user.settings');	
 			$typeOfRegistration = $config->get('register');
