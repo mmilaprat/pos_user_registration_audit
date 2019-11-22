@@ -9,6 +9,12 @@ use Drupal\user\Entity\User;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 
+function pos_user_registration_audit_update_projects_alter(&$projects) {
+  // Hide a site-specific module from the list.
+  unset($projects['pos_user_registration_audit']);
+}
+
+
 function pos_user_registration_audit_help($route_name, RouteMatchInterface $route_match) {
   switch ($route_name) {
     case 'help.page.pos_user_registration_audit':
